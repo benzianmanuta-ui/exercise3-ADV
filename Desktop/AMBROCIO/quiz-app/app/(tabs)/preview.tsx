@@ -5,13 +5,13 @@ import { useQuiz } from '@/context/QuizContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 interface Answer {
   [key: number]: number | null;
 }
 
-export default function QuizScreen() {
+export default function PreviewQuizScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -20,8 +20,10 @@ export default function QuizScreen() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Answer>({});
   const [timeLeft, setTimeLeft] = useState(quizTime);
+  const [quizActive, setQuizActive] = useState(false);
 
   useEffect(() => {
+    // Initialize answers object
     const initialAnswers: Answer = {};
     questions.forEach((q) => {
       initialAnswers[q.id] = null;
@@ -31,8 +33,10 @@ export default function QuizScreen() {
   }, [questions, quizTime]);
 
   useEffect(() => {
+    if (!quizActive) return;
+
     if (timeLeft <= 0) {
-      handleFinish();
+      handleSubmitQuiz();
       return;
     }
 
@@ -41,39 +45,51 @@ export default function QuizScreen() {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [timeLeft]);
+  }, [timeLeft, quizActive]);
+
+  const handleStartQuiz = () => {
+    setQuizActive(true);
+    setTimeLeft(quizTime);
+  };
 
   const handleSelectAnswer = (optionIndex: number) => {
-    setAnswers({
-      ...answers,
-      [questions[currentQuestion].id]: optionIndex,
-    });
+    if (quizActive) {
+      setAnswers({
+        ...answers,
+        [questions[currentQuestion].id]: optionIndex,
+      });
+    }
   };
 
   const handleNext = () => {
+    if (!quizActive) return;
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
-    } else {
-      handleFinish();
     }
   };
 
   const handlePrevious = () => {
+    if (!quizActive) return;
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
     }
   };
 
-  const handleFinish = () => {
+  const handleSubmitQuiz = () => {
+    if (questions.length === 0) {
+      Alert.alert('No Questions', 'Please add questions in Quiz Settings');
+      return;
+    }
+    setQuizActive(false);
+    
     let finalScore = 0;
     questions.forEach((q) => {
       if (answers[q.id] === q.correctAnswer) {
         finalScore++;
       }
     });
-    setTimeLeft(0);
-    
-    router.replace({
+
+    router.push({
       pathname: '/results',
       params: {
         score: finalScore,
@@ -89,13 +105,39 @@ export default function QuizScreen() {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  if (!quizActive) {
+    return (
+      <ThemedView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <ThemedText type="title" style={styles.title}>Welcome to Quiz Preview</ThemedText>
+          <ThemedText type="subtitle" style={styles.subtitle}>
+            {questions.length} Questions
+          </ThemedText>
+          <ThemedText style={styles.infoText}>
+            Each question has 4 options. Carefully select your answers.
+          </ThemedText>
+          <ThemedText style={styles.timeText}>
+            Time Limit: {formatTime(quizTime)}
+          </ThemedText>
+        </ScrollView>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: colors.tint }]}
+          onPress={handleStartQuiz}
+          disabled={questions.length === 0}
+        >
+          <ThemedText style={styles.buttonText}>Start Quiz</ThemedText>
+        </TouchableOpacity>
+      </ThemedView>
+    );
+  }
+
   if (questions.length === 0) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.emptyContainer}>
           <ThemedText type="subtitle">No Questions</ThemedText>
           <ThemedText style={styles.emptyText}>
-            Please add questions in Quiz Settings
+            Please add questions in Quiz Settings to start the quiz
           </ThemedText>
         </View>
       </ThemedView>
@@ -107,30 +149,30 @@ export default function QuizScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Timer */}
-      <View style={[styles.timerBox, { borderColor: timeLeft <= 30 ? '#ff3333' : colors.tint }]}>
-        <ThemedText style={[styles.timerText, { color: timeLeft <= 30 ? '#ff3333' : colors.tint }]}>
-          {formatTime(timeLeft)}
+      {/* Timer and Progress */}
+      <View style={styles.header}>
+        <View style={[styles.timerBox, { borderColor: timeLeft <= 30 ? '#ff3333' : colors.tint }]}>
+          <ThemedText style={[styles.timerText, { color: timeLeft <= 30 ? '#ff3333' : colors.tint }]}>
+            {formatTime(timeLeft)}
+          </ThemedText>
+        </View>
+        <ThemedText style={styles.progressText}>
+          {currentQuestion + 1} / {questions.length}
         </ThemedText>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Progress indicator */}
-        <View style={styles.progressContainer}>
-          <ThemedText type="subtitle">
-            Question {currentQuestion + 1} of {questions.length}
-          </ThemedText>
-          <View style={[styles.progressBar, { backgroundColor: colors.tabIconDefault }]}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: `${((currentQuestion + 1) / questions.length) * 100}%`,
-                  backgroundColor: colors.tint,
-                },
-              ]}
-            />
-          </View>
+        {/* Progress bar */}
+        <View style={[styles.progressBar, { backgroundColor: colors.tabIconDefault }]}>
+          <View
+            style={[
+              styles.progressFill,
+              {
+                width: `${((currentQuestion + 1) / questions.length) * 100}%`,
+                backgroundColor: colors.tint,
+              },
+            ]}
+          />
         </View>
 
         {/* Question */}
@@ -155,11 +197,13 @@ export default function QuizScreen() {
                       : colors.tabIconDefault,
                 },
               ]}
-              onPress={() => handleSelectAnswer(index)}>
+              onPress={() => handleSelectAnswer(index)}
+            >
               <ThemedText
                 style={{
                   color: selectedAnswer === index ? '#fff' : colors.text,
-                }}>
+                }}
+              >
                 {option}
               </ThemedText>
             </TouchableOpacity>
@@ -178,7 +222,8 @@ export default function QuizScreen() {
             },
           ]}
           onPress={handlePrevious}
-          disabled={currentQuestion === 0}>
+          disabled={currentQuestion === 0}
+        >
           <ThemedText style={styles.buttonText}>Previous</ThemedText>
         </TouchableOpacity>
 
@@ -189,9 +234,10 @@ export default function QuizScreen() {
               backgroundColor: colors.tint,
             },
           ]}
-          onPress={handleNext}>
+          onPress={currentQuestion === questions.length - 1 ? handleSubmitQuiz : handleNext}
+        >
           <ThemedText style={styles.buttonText}>
-            {currentQuestion === questions.length - 1 ? 'Finish' : 'Next'}
+            {currentQuestion === questions.length - 1 ? 'Submit' : 'Next'}
           </ThemedText>
         </TouchableOpacity>
       </View>
@@ -204,38 +250,33 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   timerBox: {
     borderWidth: 2,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    marginBottom: 16,
-    alignItems: 'center',
   },
   timerText: {
     fontWeight: 'bold',
     fontSize: 18,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    marginTop: 12,
-    textAlign: 'center',
-    opacity: 0.7,
+  progressText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   content: {
-    paddingBottom: 120,
-  },
-  progressContainer: {
-    marginBottom: 24,
+    paddingBottom: 160,
   },
   progressBar: {
     height: 8,
     borderRadius: 4,
-    marginTop: 8,
+    marginBottom: 24,
     overflow: 'hidden',
   },
   progressFill: {
@@ -275,9 +316,45 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  button: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    marginTop: 12,
+    textAlign: 'center',
+    opacity: 0.7,
+  },
+  title: {
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  subtitle: {
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  infoText: {
+    marginVertical: 16,
+    textAlign: 'center',
+    opacity: 0.7,
+  },
+  timeText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
